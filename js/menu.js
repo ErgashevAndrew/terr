@@ -4,7 +4,13 @@ function setupMenu() {
   AppState.screens.findPopup = document.getElementById('findPopup');
   AppState.screens.gameScreen = document.getElementById('gameScreen');
 
-  document.getElementById('singleModeBtn').addEventListener('click', startSingleGame);
+  document.getElementById('singleModeBtn').addEventListener('click', () => {
+    if (typeof disconnectFromServer === 'function') {
+      disconnectFromServer(false);
+    }
+    startSingleGame();
+  });
+
   document.getElementById('onlineModeBtn').addEventListener('click', openOnlineMenu);
   document.getElementById('backToMainBtn').addEventListener('click', () => {
     closeFindPopup();
@@ -15,17 +21,25 @@ function setupMenu() {
 
   document.getElementById('hostBtn').addEventListener('click', () => {
     const nickname = getNickname();
-    connectToServer('localhost:3000', nickname);
-  });
+    const server = getSelectedServer();
 
-  document.getElementById('joinBtn').addEventListener('click', () => {
-    if (AppState.menu.selectedServerIndex === -1) {
+    if (!server) {
       alert('Сначала выбери сервер из списка.');
       return;
     }
 
-    const server = AppState.menu.servers[AppState.menu.selectedServerIndex];
+    connectToServer(server.address, nickname);
+  });
+
+  document.getElementById('joinBtn').addEventListener('click', () => {
     const nickname = getNickname();
+    const server = getSelectedServer();
+
+    if (!server) {
+      alert('Сначала выбери сервер из списка.');
+      return;
+    }
+
     connectToServer(server.address, nickname);
   });
 
@@ -33,22 +47,26 @@ function setupMenu() {
   const scrollbar = document.querySelector('.server-scrollbar');
   const thumb = document.querySelector('.server-scroll-thumb');
 
-  serverList.addEventListener('wheel', (event) => {
-    event.preventDefault();
-    AppState.menu.scrollY += event.deltaY;
-    clampServerScroll();
-    updateServerScrollbar();
-  }, { passive: false });
+  if (serverList) {
+    serverList.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      AppState.menu.scrollY += event.deltaY;
+      clampServerScroll();
+      updateServerScrollbar();
+    }, { passive: false });
+  }
 
-  thumb.addEventListener('mousedown', (event) => {
-    event.preventDefault();
-    AppState.menu.draggingThumb = true;
-    AppState.menu.dragStartY = event.clientY;
-    AppState.menu.dragStartScrollY = AppState.menu.scrollY;
-  });
+  if (thumb) {
+    thumb.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      AppState.menu.draggingThumb = true;
+      AppState.menu.dragStartY = event.clientY;
+      AppState.menu.dragStartScrollY = AppState.menu.scrollY;
+    });
+  }
 
   window.addEventListener('mousemove', (event) => {
-    if (!AppState.menu.draggingThumb) return;
+    if (!AppState.menu.draggingThumb || !scrollbar || !thumb) return;
 
     const trackHeight = scrollbar.clientHeight;
     const thumbHeight = thumb.clientHeight;
@@ -66,30 +84,37 @@ function setupMenu() {
     AppState.menu.draggingThumb = false;
   });
 
-  scrollbar.addEventListener('mousedown', (event) => {
-    if (event.target === thumb) return;
+  if (scrollbar && serverList && thumb) {
+    scrollbar.addEventListener('mousedown', (event) => {
+      if (event.target === thumb) return;
 
-    const rect = scrollbar.getBoundingClientRect();
-    const clickY = event.clientY - rect.top;
-    const thumbCenter = thumb.offsetTop + thumb.offsetHeight / 2;
+      const rect = scrollbar.getBoundingClientRect();
+      const clickY = event.clientY - rect.top;
+      const thumbCenter = thumb.offsetTop + thumb.offsetHeight / 2;
 
-    if (clickY < thumbCenter) {
-      AppState.menu.scrollY -= serverList.clientHeight;
-    } else {
-      AppState.menu.scrollY += serverList.clientHeight;
-    }
+      if (clickY < thumbCenter) {
+        AppState.menu.scrollY -= serverList.clientHeight;
+      } else {
+        AppState.menu.scrollY += serverList.clientHeight;
+      }
 
-    clampServerScroll();
-    updateServerScrollbar();
-  });
+      clampServerScroll();
+      updateServerScrollbar();
+    });
+  }
 
   renderServerList();
 }
 
 function getNickname() {
   const input = document.getElementById('nicknameInput');
-  const value = input.value.trim();
+  const value = input ? input.value.trim() : '';
   return value || 'Player';
+}
+
+function getSelectedServer() {
+  if (AppState.menu.selectedServerIndex === -1) return null;
+  return AppState.menu.servers[AppState.menu.selectedServerIndex] || null;
 }
 
 function openMainMenu() {
@@ -120,7 +145,9 @@ function addServerFromInput() {
 
   const alreadyExists = AppState.menu.servers.some(server => server.address === value);
   if (alreadyExists) {
+    AppState.menu.selectedServerIndex = AppState.menu.servers.findIndex(server => server.address === value);
     input.value = '';
+    renderServerList();
     closeFindPopup();
     return;
   }
@@ -130,6 +157,9 @@ function addServerFromInput() {
     address: value,
   });
 
+  AppState.menu.selectedServerIndex = AppState.menu.servers.length - 1;
+  AppState.menu.scrollY = getServerMaxScroll();
+
   input.value = '';
   renderServerList();
   closeFindPopup();
@@ -137,6 +167,8 @@ function addServerFromInput() {
 
 function renderServerList() {
   const list = document.getElementById('serverList');
+  if (!list) return;
+
   list.innerHTML = '<div id="serverListContent" class="server-list-content"></div>';
 
   const content = document.getElementById('serverListContent');
@@ -144,7 +176,7 @@ function renderServerList() {
   if (AppState.menu.servers.length === 0) {
     const row = document.createElement('div');
     row.className = 'server-item';
-    row.textContent = 'Список пуст. Нажми Find и добавь IP:порт сервера.';
+    row.textContent = 'Список пуст. Нажми Find и добавь адрес сервера.';
     content.appendChild(row);
   } else {
     for (let i = 0; i < AppState.menu.servers.length; i++) {
@@ -173,6 +205,7 @@ function getServerContentHeight() {
 
 function getServerMaxScroll() {
   const list = document.getElementById('serverList');
+  if (!list) return 0;
   return Math.max(0, getServerContentHeight() - list.clientHeight);
 }
 
