@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terr Sandbox</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/menu.css" />
+  <link rel="stylesheet" href="css/game.css" />
+  <link rel="stylesheet" href="css/debug.css" />
+</head>
+<body>
+  <div id="app">
+    <section id="mainMenu" class="screen menu-screen">
+      <div class="menu-background"></div>
+      <img id="menuLogo" class="menu-logo" src="menu/LOGO.png" alt="Logo" />
+
+      <div class="menu-buttons long-buttons">
+        <button id="singleModeBtn" class="ui-button ui-button-long">
+          <span>Single Mode</span>
+        </button>
+        <button id="onlineModeBtn" class="ui-button ui-button-long">
+          <span>Online Mode</span>
+        </button>
+      </div>
+    </section>
+
+    <section id="onlineMenu" class="screen menu-screen hidden">
+      <div class="menu-background"></div>
+
+      <div class="online-layout">
+        <label class="field-label" for="nicknameInput">Enter your nickname</label>
+        <div class="textbox-wrap">
+          <input id="nicknameInput" class="ui-textbox" type="text" maxlength="20" value="Player" />
+        </div>
+
+        <div class="server-list-frame">
+          <div id="serverList" class="server-list" tabindex="0"></div>
+          <div class="server-scrollbar">
+            <div class="server-scroll-thumb"></div>
+          </div>
+        </div>
+
+        <div class="small-buttons-row">
+          <button id="hostBtn" class="ui-button ui-button-small"><span>Host</span></button>
+          <button id="joinBtn" class="ui-button ui-button-small"><span>Join</span></button>
+          <button id="findBtn" class="ui-button ui-button-small"><span>Find</span></button>
+        </div>
+
+        <button id="backToMainBtn" class="ui-button ui-button-long back-button"><span>Back</span></button>
+      </div>
+    </section>
+
+    <section id="findPopup" class="popup hidden">
+      <div class="popup-panel">
+        <label class="field-label" for="serverAddressInput">Enter port adress</label>
+        <div class="textbox-wrap popup-textbox-wrap">
+          <input id="serverAddressInput" class="ui-textbox" type="text" maxlength="64" placeholder="192.168.0.15:3000" />
+        </div>
+        <button id="addServerBtn" class="ui-button ui-button-small"><span>Add</span></button>
+      </div>
+    </section>
+
+    <section id="gameScreen" class="screen hidden">
+      <canvas id="gameCanvas" width="1280" height="720"></canvas>
+
+      <div id="debugPanel" class="debug-panel hidden">
+        <div class="debug-title">Debug</div>
+        <label class="debug-option">
+          <input id="toggleHitbox" type="checkbox" />
+          <span>Show hitbox</span>
+        </label>
+      </div>
+
+      <div id="gameHint" class="game-hint hidden">
+        ESC — menu | P — debug | Z + wheel — zoom
+      </div>
+    </section>
+  </div>
+
+  <script src="js/state.js"></script>
+  <script src="js/assets.js"></script>
+  <script src="js/menu.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/debug.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

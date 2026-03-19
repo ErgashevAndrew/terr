@@ -1,0 +1,23 @@
+.debug-panel {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: 240px;
+  padding: 12px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  border: 2px solid rgba(255,255,255,0.2);
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.7);
+}
+
+.debug-title {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+
+.debug-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+}

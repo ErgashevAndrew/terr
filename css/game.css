@@ -1,0 +1,21 @@
+#gameScreen {
+  background: #6db8ff;
+}
+
+#gameCanvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  image-rendering: pixelated;
+}
+
+.game-hint {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 20px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+}
