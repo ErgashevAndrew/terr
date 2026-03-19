@@ -13,7 +13,15 @@ window.Network = {
 function normalizeServerAddress(address) {
   const value = address.trim();
   if (!value) return '';
-  if (value.startsWith('ws://') || value.startsWith('wss://')) return value;
+
+  if (value.startsWith('ws://') || value.startsWith('wss://')) {
+    return value;
+  }
+
+  if (window.location.protocol === 'https:') {
+    return `wss://${value}`;
+  }
+
   return `ws://${value}`;
 }
 
@@ -61,21 +69,28 @@ function connectToServer(address, nickname) {
       return;
     }
 
-    if (data.type === 'hello') {
-      Network.playerId = data.playerId;
-      Network.pendingSpawn = {
-        x: data.self.x,
-        y: data.self.y,
-      };
+    if (data.type === 'init') {
+      Network.playerId = data.selfId || data.id;
+
+      const selfPlayer = Array.isArray(data.players)
+        ? data.players.find(player => player.id === Network.playerId)
+        : null;
+
+      if (selfPlayer) {
+        Network.pendingSpawn = {
+          x: selfPlayer.x,
+          y: selfPlayer.y,
+        };
+      }
 
       applyNetworkWorld(data.world);
-      applyPlayersSnapshot(data.players);
+      applyPlayersSnapshot(data.players || []);
       startOnlineGame();
       return;
     }
 
-    if (data.type === 'players_snapshot') {
-      applyPlayersSnapshot(data.players);
+    if (data.type === 'players') {
+      applyPlayersSnapshot(data.players || []);
     }
   });
 
@@ -89,7 +104,8 @@ function connectToServer(address, nickname) {
   });
 
   socket.addEventListener('error', () => {
-    alert('Ошибка подключения. Проверь адрес сервера и запущен ли server.js');
+    Network.connecting = false;
+    alert('Ошибка подключения. Проверь адрес сервера.');
   });
 }
 
@@ -147,13 +163,12 @@ function updateNetwork() {
   Network.sendTimer = now;
 
   sendToServer({
-    type: 'player_state',
+    type: 'update',
     x: Player.x,
     y: Player.y,
-    facing: Player.facing,
-    state: Player.state,
-    walkFrameIndex: Player.walkFrameIndex,
-    mineFrameIndex: Player.mineFrameIndex,
+    vx: Player.vx || 0,
+    vy: Player.vy || 0,
+    direction: Player.facing || 1,
   });
 }
 
@@ -165,14 +180,14 @@ function getRemotePlayerSprite(remotePlayer) {
   if (remotePlayer.state === 'walk') {
     const loadedFrames = getLoadedWalkFrames();
     if (loadedFrames.length > 0) {
-      return loadedFrames[remotePlayer.walkFrameIndex % loadedFrames.length];
+      return loadedFrames[(remotePlayer.walkFrameIndex || 0) % loadedFrames.length];
     }
     return Assets.player.idle;
   }
 
   if (remotePlayer.state === 'mine') {
     const mineFrames = [Assets.player.mine1, Assets.player.mine2, Assets.player.mine3];
-    return mineFrames[remotePlayer.mineFrameIndex % mineFrames.length] || Assets.player.idle;
+    return mineFrames[(remotePlayer.mineFrameIndex || 0) % mineFrames.length] || Assets.player.idle;
   }
 
   return Assets.player.idle;
@@ -184,16 +199,19 @@ function drawRemotePlayers(ctx) {
 
   for (const remotePlayer of entries) {
     const sprite = getRemotePlayerSprite(remotePlayer);
+    const remoteWidth = remotePlayer.width || Player.width;
+    const remoteHeight = remotePlayer.height || Player.height;
+    const remoteDirection = remotePlayer.direction || remotePlayer.facing || 1;
 
     ctx.save();
 
     const visualWidth = Player.sprite.width;
     const visualHeight = Player.sprite.height;
-    const drawX = remotePlayer.x + remotePlayer.width / 2;
-    const drawY = remotePlayer.y + remotePlayer.height;
+    const drawX = remotePlayer.x + remoteWidth / 2;
+    const drawY = remotePlayer.y + remoteHeight;
 
     ctx.translate(drawX, drawY);
-    ctx.scale(remotePlayer.facing || 1, 1);
+    ctx.scale(remoteDirection, 1);
 
     if (isDrawableSprite(sprite)) {
       ctx.drawImage(sprite, -visualWidth / 2, -visualHeight, visualWidth, visualHeight);
@@ -207,12 +225,12 @@ function drawRemotePlayers(ctx) {
     ctx.fillStyle = '#ffffff';
     ctx.font = '16px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(remotePlayer.nickname || 'Player', remotePlayer.x + remotePlayer.width / 2, remotePlayer.y - 8);
+    ctx.fillText(remotePlayer.nickname || 'Player', remotePlayer.x + remoteWidth / 2, remotePlayer.y - 8);
 
     if (AppState.debug.showHitbox) {
       ctx.strokeStyle = '#4dc3ff';
       ctx.lineWidth = 2 / Camera.zoom;
-      ctx.strokeRect(remotePlayer.x, remotePlayer.y, remotePlayer.width, remotePlayer.height);
+      ctx.strokeRect(remotePlayer.x, remotePlayer.y, remoteWidth, remoteHeight);
     }
   }
 }
