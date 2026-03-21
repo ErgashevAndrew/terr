@@ -12,7 +12,7 @@ function setupInput() {
     if (event.code === 'KeyZ') AppState.input.zoomHeld = true;
     if (event.code === 'KeyE') {
       AppState.input.inventoryTogglePressed = true;
-      if (AppState.game.running && AppState.game.mode === 'single') {
+      if (AppState.game.running) {
         toggleInventory();
       }
     }
@@ -49,7 +49,7 @@ function setupInput() {
   });
 
   window.addEventListener('wheel', (event) => {
-    if (AppState.game.running && AppState.game.mode === 'single' && AppState.inventory.open && typeof isMouseOverCraftPanel === 'function' && isMouseOverCraftPanel()) {
+    if (AppState.game.running && AppState.inventory.open && typeof isMouseOverCraftPanel === 'function' && isMouseOverCraftPanel()) {
       event.preventDefault();
       if (typeof scrollCraftRecipes === 'function') {
         scrollCraftRecipes(event.deltaY > 0 ? 1 : -1);
@@ -57,7 +57,7 @@ function setupInput() {
       return;
     }
 
-    if (AppState.game.running && AppState.game.mode === 'single' && !AppState.inventory.open && !AppState.input.zoomHeld) {
+    if (AppState.game.running && !AppState.inventory.open && !AppState.input.zoomHeld) {
       event.preventDefault();
       cycleHotbarSelection(event.deltaY > 0 ? 1 : -1);
       return;

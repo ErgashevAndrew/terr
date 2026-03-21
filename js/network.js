@@ -8,6 +8,7 @@ window.Network = {
   sendTimer: 0,
   sendDelay: 50,
   pendingSpawn: null,
+  selfSnapshot: null,
 };
 
 function normalizeServerAddress(address) {
@@ -20,6 +21,14 @@ function normalizeServerAddress(address) {
 
   if (value.startsWith('ws://') || value.startsWith('wss://')) {
     return value;
+  }
+
+  if (value.startsWith('http://')) {
+    return `ws://${value.slice('http://'.length)}`;
+  }
+
+  if (value.startsWith('https://')) {
+    return `wss://${value.slice('https://'.length)}`;
   }
 
   return window.location.protocol === 'https:' ? `wss://${value}` : `ws://${value}`;
@@ -54,11 +63,7 @@ function connectToServer(address, nickname) {
     Network.connected = true;
     Network.connecting = false;
     Network.sendTimer = 0;
-
-    sendToServer({
-      type: 'join',
-      nickname,
-    });
+    sendToServer({ type: 'join', nickname });
   });
 
   socket.addEventListener('message', (event) => {
@@ -71,16 +76,14 @@ function connectToServer(address, nickname) {
 
     if (data.type === 'init') {
       Network.playerId = data.selfId || data.id || null;
+      Network.selfSnapshot = data.selfPlayer || null;
 
       const selfPlayer = Array.isArray(data.players)
         ? data.players.find(player => player.id === Network.playerId)
         : null;
 
       if (selfPlayer) {
-        Network.pendingSpawn = {
-          x: selfPlayer.x,
-          y: selfPlayer.y,
-        };
+        Network.pendingSpawn = { x: selfPlayer.x, y: selfPlayer.y };
       }
 
       applyNetworkWorld(data.world);
@@ -91,6 +94,26 @@ function connectToServer(address, nickname) {
 
     if (data.type === 'players') {
       applyPlayersSnapshot(data.players || []);
+      return;
+    }
+
+    if (data.type === 'worldDelta') {
+      applyWorldDelta(data);
+      return;
+    }
+
+    if (data.type === 'drops') {
+      AppState.entities.drops = Array.isArray(data.drops) ? data.drops.map(drop => ({ ...drop })) : [];
+      return;
+    }
+
+    if (data.type === 'inventory') {
+      applyInventorySnapshot(data.slots);
+      return;
+    }
+
+    if (data.type === 'selfState') {
+      applySelfSnapshot(data.player);
     }
   });
 
@@ -135,22 +158,12 @@ function resetNetworkState() {
   Network.serverAddress = '';
   Network.sendTimer = 0;
   Network.pendingSpawn = null;
+  Network.selfSnapshot = null;
 }
 
 function applyNetworkWorld(serverWorld) {
   if (!serverWorld) return;
-
-  loadWorldSnapshot({
-    width: serverWorld.width,
-    height: serverWorld.height,
-    blockSize: serverWorld.blockSize,
-    data: serverWorld.data,
-    surfaceHeights: serverWorld.surfaceHeights,
-    dirtDepths: serverWorld.surfaceHeights ? serverWorld.surfaceHeights.map(() => 5) : [],
-    trees: [],
-    drops: [],
-    grassRegrowth: [],
-  });
+  loadWorldSnapshot(serverWorld);
 }
 
 function applyPlayersSnapshot(playersArray) {
@@ -160,6 +173,91 @@ function applyPlayersSnapshot(playersArray) {
     nextPlayers[player.id] = player;
   }
   Network.players = nextPlayers;
+}
+
+function applyWorldDelta(data) {
+  if (Array.isArray(data.tiles)) {
+    for (const change of data.tiles) {
+      setTileType(change.x, change.y, change.tile);
+    }
+  }
+
+  if (Array.isArray(data.surface)) {
+    for (const column of data.surface) {
+      if (column && typeof column.x === 'number' && typeof column.y === 'number') {
+        World.surfaceHeights[column.x] = column.y;
+      }
+    }
+  }
+
+  if (Array.isArray(data.trees)) {
+    World.trees = data.trees.map(tree => ({
+      id: tree.id,
+      x: tree.x,
+      groundY: tree.groundY,
+      height: tree.height,
+      hasLeaf: tree.hasLeaf !== false,
+      segments: Array.isArray(tree.segments) ? tree.segments.slice() : [],
+    }));
+  }
+}
+
+function applyInventorySnapshot(slots) {
+  if (!Array.isArray(slots)) return;
+  AppState.inventory.slots = slots
+    .slice(0, AppState.inventory.totalSlots)
+    .map(slot => (slot ? { ...slot } : null));
+
+  while (AppState.inventory.slots.length < AppState.inventory.totalSlots) {
+    AppState.inventory.slots.push(null);
+  }
+}
+
+function applySelfSnapshot(snapshot) {
+  if (!snapshot) return;
+  Network.selfSnapshot = snapshot;
+  loadPlayerSnapshot(snapshot);
+  setDeathOverlayVisible(snapshot.dead !== true);
+}
+
+function syncInventoryWithServer() {
+  if (!Network.connected || AppState.game.mode !== 'online') return;
+  sendToServer({
+    type: 'inventory_sync',
+    slots: AppState.inventory.slots.map(slot => (slot ? { ...slot } : null)),
+  });
+}
+
+function sendMineRequest(tileX, tileY) {
+  if (!Network.connected) return false;
+  sendToServer({ type: 'mine', tileX, tileY });
+  return true;
+}
+
+function sendPlaceRequest(tileX, tileY, slotIndex, itemType) {
+  if (!Network.connected) return false;
+  sendToServer({ type: 'place', tileX, tileY, slotIndex, itemType });
+  return true;
+}
+
+function sendCraftRequest(recipeId) {
+  if (!Network.connected) return false;
+  sendToServer({ type: 'craft', recipeId });
+  return true;
+}
+
+function sendDeathEvent() {
+  if (!Network.connected) return;
+  sendToServer({
+    type: 'death',
+    x: Player.x,
+    y: Player.y,
+  });
+}
+
+function requestNetworkRespawn() {
+  if (!Network.connected) return;
+  sendToServer({ type: 'respawn' });
 }
 
 function updateNetwork() {
@@ -176,27 +274,26 @@ function updateNetwork() {
     vx: Player.vx || 0,
     vy: Player.vy || 0,
     direction: Player.facing || 1,
+    state: Player.state,
+    walkFrameIndex: Player.walkFrameIndex || 0,
+    mineFrameIndex: Player.mineFrameIndex || 0,
+    health: AppState.combat.health,
+    dead: AppState.combat.dead,
   });
 }
 
 function getRemotePlayerSprite(remotePlayer) {
-  if (remotePlayer.state === 'jump') {
-    return Assets.player.jump;
-  }
-
+  if (remotePlayer.state === 'jump') return Assets.player.jump;
   if (remotePlayer.state === 'walk') {
     const loadedFrames = getLoadedWalkFrames();
     if (loadedFrames.length > 0) {
       return loadedFrames[(remotePlayer.walkFrameIndex || 0) % loadedFrames.length];
     }
-    return Assets.player.idle;
   }
-
   if (remotePlayer.state === 'mine') {
     const mineFrames = [Assets.player.mine1, Assets.player.mine2, Assets.player.mine3];
     return mineFrames[(remotePlayer.mineFrameIndex || 0) % mineFrames.length] || Assets.player.idle;
   }
-
   return Assets.player.idle;
 }
 
@@ -205,18 +302,18 @@ function drawRemotePlayers(ctx) {
   if (entries.length === 0) return;
 
   for (const remotePlayer of entries) {
+    if (remotePlayer.dead) continue;
+
     const sprite = getRemotePlayerSprite(remotePlayer);
     const remoteWidth = remotePlayer.width || Player.width;
     const remoteHeight = remotePlayer.height || Player.height;
     const remoteDirection = remotePlayer.direction || remotePlayer.facing || 1;
 
     ctx.save();
-
     const visualWidth = Player.sprite.width;
     const visualHeight = Player.sprite.height;
     const drawX = remotePlayer.x + remoteWidth / 2;
     const drawY = remotePlayer.y + remoteHeight;
-
     ctx.translate(drawX, drawY);
     ctx.scale(remoteDirection, 1);
 
@@ -226,7 +323,6 @@ function drawRemotePlayers(ctx) {
       ctx.fillStyle = '#66ccff';
       ctx.fillRect(-visualWidth / 2, -visualHeight, visualWidth, visualHeight);
     }
-
     ctx.restore();
 
     ctx.fillStyle = '#ffffff';

@@ -83,8 +83,9 @@ function loadPlayerSnapshot(snapshot) {
   const snapshotHealth = typeof snapshot.health === 'number'
     ? Math.max(0, Math.min(AppState.combat.maxHealth, snapshot.health))
     : AppState.combat.maxHealth;
-  AppState.combat.health = snapshotHealth > 0 ? snapshotHealth : AppState.combat.maxHealth;
-  AppState.combat.dead = false;
+  const allowZeroHealth = snapshot.dead === true || snapshot.allowZeroHealth === true;
+  AppState.combat.health = allowZeroHealth ? snapshotHealth : (snapshotHealth > 0 ? snapshotHealth : AppState.combat.maxHealth);
+  AppState.combat.dead = snapshot.dead === true;
   AppState.combat.hurtFlashTimer = 0;
   AppState.combat.falling = false;
   AppState.combat.fallStartY = Player.y;
@@ -192,7 +193,13 @@ function killPlayer() {
   }
 
   spawnPlayerGibs();
-  spillPlayerInventory();
+  if (AppState.game.mode === 'online') {
+    if (typeof sendDeathEvent === 'function') {
+      sendDeathEvent();
+    }
+  } else {
+    spillPlayerInventory();
+  }
 
   if (typeof setDeathOverlayVisible === 'function') {
     setDeathOverlayVisible(true);
@@ -259,6 +266,13 @@ function spillPlayerInventory() {
 
 function respawnPlayer() {
   if (!AppState.combat.dead) return;
+
+  if (AppState.game.mode === 'online') {
+    if (typeof requestNetworkRespawn === 'function') {
+      requestNetworkRespawn();
+    }
+    return;
+  }
 
   Player.x = AppState.game.spawnX;
   Player.y = AppState.game.spawnY;

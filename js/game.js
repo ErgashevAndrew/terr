@@ -134,17 +134,19 @@ function startOnlineGame() {
   AppState.inventory.open = false;
   AppState.inventory.draggedItem = null;
   AppState.inventory.draggedSlot = -1;
-  AppState.entities.drops = [];
   AppState.entities.particles = [];
   AppState.entities.gibs = [];
   resetMiningState();
-  spawnPlayer();
-
-  if (Network.pendingSpawn) {
-    Player.x = Network.pendingSpawn.x;
-    Player.y = Network.pendingSpawn.y;
-    Player.vx = 0;
-    Player.vy = 0;
+  if (Network.selfSnapshot) {
+    loadPlayerSnapshot(Network.selfSnapshot);
+  } else {
+    spawnPlayer();
+    if (Network.pendingSpawn) {
+      Player.x = Network.pendingSpawn.x;
+      Player.y = Network.pendingSpawn.y;
+      Player.vx = 0;
+      Player.vy = 0;
+    }
   }
 
   AppState.game.running = true;
@@ -192,8 +194,10 @@ function updateGame() {
   updateGibs();
   updateParticles();
 
-  if (AppState.game.mode === 'single' && !AppState.combat.dead) {
-    updateGrassRegrowth();
+  if (!AppState.combat.dead) {
+    if (AppState.game.mode === 'single') {
+      updateGrassRegrowth();
+    }
     updateMining();
   } else if (AppState.combat.dead) {
     resetMiningState();
@@ -305,6 +309,9 @@ function restoreDraggedItem() {
 
   AppState.inventory.draggedItem = null;
   AppState.inventory.draggedSlot = -1;
+  if (AppState.game.mode === 'online' && typeof syncInventoryWithServer === 'function') {
+    syncInventoryWithServer();
+  }
 }
 
 function updateInventoryHover() {
@@ -313,7 +320,7 @@ function updateInventoryHover() {
 }
 
 function getInventoryClickTarget() {
-  if (!AppState.game.running || AppState.game.mode !== 'single') return null;
+  if (!AppState.game.running) return null;
 
   const mouseX = AppState.mouse.x;
   const mouseY = AppState.mouse.y;
@@ -355,6 +362,7 @@ function handleInventorySlotClick(slotIndex) {
     AppState.inventory.draggedItem = { ...slotItem };
     AppState.inventory.draggedSlot = slotIndex;
     AppState.inventory.slots[slotIndex] = null;
+    if (AppState.game.mode === 'online' && typeof syncInventoryWithServer === 'function') syncInventoryWithServer();
     return;
   }
 
@@ -362,6 +370,7 @@ function handleInventorySlotClick(slotIndex) {
     AppState.inventory.slots[slotIndex] = draggedItem;
     AppState.inventory.draggedItem = null;
     AppState.inventory.draggedSlot = -1;
+    if (AppState.game.mode === 'online' && typeof syncInventoryWithServer === 'function') syncInventoryWithServer();
     return;
   }
 
@@ -374,16 +383,20 @@ function handleInventorySlotClick(slotIndex) {
       AppState.inventory.draggedItem = null;
       AppState.inventory.draggedSlot = -1;
     }
+    if (AppState.game.mode === 'online' && typeof syncInventoryWithServer === 'function') syncInventoryWithServer();
     return;
   }
 
   AppState.inventory.slots[slotIndex] = draggedItem;
   AppState.inventory.draggedItem = slotItem;
   AppState.inventory.draggedSlot = slotIndex;
+  if (AppState.game.mode === 'online' && typeof syncInventoryWithServer === 'function') syncInventoryWithServer();
 }
 
 function dropDraggedItemFromInventory() {
   if (!AppState.inventory.draggedItem) return;
+
+  if (AppState.game.mode === 'online') return;
 
   dropInventoryItemNearPlayer(AppState.inventory.draggedItem.type, 1);
   AppState.inventory.draggedItem.count -= 1;
@@ -490,6 +503,10 @@ function tryCraftRecipe(recipeIndex) {
   const recipe = recipes[recipeIndex];
   if (!recipe || !canCraftRecipe(recipe)) return false;
 
+  if (AppState.game.mode === 'online') {
+    return typeof sendCraftRequest === 'function' ? sendCraftRequest(recipe.id) : false;
+  }
+
   for (const ingredient of recipe.ingredients) {
     consumeInventoryItems(ingredient.type, ingredient.count);
   }
@@ -590,6 +607,10 @@ function canPlayerReachTile(tileX, tileY) {
 }
 
 function breakMineTarget(target) {
+  if (AppState.game.mode === 'online') {
+    return typeof sendMineRequest === 'function' ? sendMineRequest(target.tileX, target.tileY) : false;
+  }
+
   if (target.type === 'tile') {
     const removedTile = removeTerrainTile(target.tileX, target.tileY);
     if (!removedTile) return;
@@ -635,6 +656,13 @@ function setDeathOverlayVisible(visible) {
 }
 
 function updateDrops() {
+  if (AppState.game.mode === 'online') {
+    for (const drop of AppState.entities.drops) {
+      drop.bobTime = (drop.bobTime || 0) + 0.04;
+    }
+    return;
+  }
+
   const nextDrops = [];
   const canCollectDrops = !AppState.combat.dead;
 
@@ -1457,7 +1485,7 @@ function pointInRect(x, y, rect) {
 }
 
 function tryPlaceBlockAtCursor() {
-  if (!AppState.game.running || AppState.game.mode !== 'single' || AppState.inventory.open || AppState.combat.dead) return false;
+  if (!AppState.game.running || AppState.inventory.open || AppState.combat.dead) return false;
 
   const slotIndex = AppState.inventory.selectedHotbarSlot;
   if (slotIndex === -1) return false;
@@ -1485,6 +1513,13 @@ function tryPlaceBlockAtCursor() {
   if (rectIntersectsSolid(pixelX, pixelY, World.blockSize, World.blockSize)) return false;
   if (rectanglesOverlap(pixelX, pixelY, World.blockSize, World.blockSize, Player.x, Player.y, Player.width, Player.height)) return false;
 
+  Player.placeSwingTimer = 10;
+  spawnBreakParticles(item.type, tileX, tileY, 3);
+
+  if (AppState.game.mode === 'online') {
+    return typeof sendPlaceRequest === 'function' ? sendPlaceRequest(tileX, tileY, slotIndex, item.type) : false;
+  }
+
   const tileBelow = getTileType(tileX, tileY + 1);
   if (tileBelow === 'dirtywgrass') {
     setTileType(tileX, tileY + 1, 'dirty');
@@ -1501,9 +1536,6 @@ function tryPlaceBlockAtCursor() {
     cancelGrassRegrowthAt(tileX, tileY);
   }
   updateGrassExposureAround(tileX, tileY);
-  spawnBreakParticles(item.type, tileX, tileY, 3);
-  Player.placeSwingTimer = 10;
-
   item.count -= 1;
   if (item.count <= 0) {
     AppState.inventory.slots[slotIndex] = null;
@@ -1528,9 +1560,14 @@ function tryPlaceTorchAt(tileX, tileY, item, slotIndex) {
     return false;
   }
 
-  setTileType(tileX, tileY, placedTile);
-  spawnBreakParticles(placedTile, tileX, tileY, 1);
   Player.placeSwingTimer = 10;
+  spawnBreakParticles(placedTile, tileX, tileY, 1);
+
+  if (AppState.game.mode === 'online') {
+    return typeof sendPlaceRequest === 'function' ? sendPlaceRequest(tileX, tileY, slotIndex, item.type) : false;
+  }
+
+  setTileType(tileX, tileY, placedTile);
   item.count -= 1;
   if (item.count <= 0) {
     AppState.inventory.slots[slotIndex] = null;
