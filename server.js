@@ -44,6 +44,14 @@ const World = {
 const players = new Map();
 const drops = [];
 
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+});
+
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled rejection:", error);
+});
+
 function send(ws, payload) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload));
@@ -720,13 +728,18 @@ function broadcastPlayersState() {
   broadcast({ type: "players", players: getPlayersArray() });
 }
 
-function broadcastWorldDelta(changes) {
-  broadcast({
+function broadcastWorldDelta(changes, options = {}) {
+  const payload = {
     type: "worldDelta",
     tiles: Array.from(changes.tiles.values()),
     surface: Array.from(changes.columns).map(x => ({ x, y: World.surfaceHeights[x] })),
-    trees: serializeTrees(),
-  });
+  };
+
+  if (options.treesChanged) {
+    payload.trees = serializeTrees();
+  }
+
+  broadcast(payload);
 }
 
 function handleMine(player, data) {
@@ -737,6 +750,7 @@ function handleMine(player, data) {
   if (!target) return;
 
   const changes = createChangeSet();
+  let treesChanged = false;
   if (target.type === "tile") {
     const removedTile = removeTerrainTile(target.tileX, target.tileY, changes);
     if (!removedTile) return;
@@ -744,13 +758,14 @@ function handleMine(player, data) {
   } else {
     const removedSegments = removeTreeSegments(target.treeId, target.segmentIndex);
     if (removedSegments.length === 0) return;
+    treesChanged = true;
     for (const removed of removedSegments) {
       spawnDrop("wood", removed.tileX * World.blockSize + World.blockSize / 2, removed.tileY * World.blockSize + World.blockSize / 2);
     }
   }
 
   if (changes.tiles.size > 0 || target.type === "tree") {
-    broadcastWorldDelta(changes);
+    broadcastWorldDelta(changes, { treesChanged });
   }
   if (dropsDirty) {
     broadcast({ type: "drops", drops: serializeDrops() });
@@ -1016,46 +1031,54 @@ wss.on("connection", (ws) => {
   broadcastPlayersState();
 
   ws.on("message", (message) => {
-    let data;
     try {
-      data = JSON.parse(message.toString());
+      let data;
+      try {
+        data = JSON.parse(message.toString());
+      } catch (error) {
+        return;
+      }
+
+      const currentPlayer = players.get(playerId);
+      if (!currentPlayer) return;
+
+      if (data.type === "join") {
+        currentPlayer.nickname = data.nickname || "Player";
+        broadcastPlayersState();
+      } else if (data.type === "update") {
+        currentPlayer.x = typeof data.x === "number" ? data.x : currentPlayer.x;
+        currentPlayer.y = typeof data.y === "number" ? data.y : currentPlayer.y;
+        currentPlayer.vx = typeof data.vx === "number" ? data.vx : 0;
+        currentPlayer.vy = typeof data.vy === "number" ? data.vy : 0;
+        currentPlayer.direction = data.direction === -1 ? -1 : 1;
+        currentPlayer.state = typeof data.state === "string" ? data.state : "idle";
+        currentPlayer.walkFrameIndex = data.walkFrameIndex | 0;
+        currentPlayer.mineFrameIndex = data.mineFrameIndex | 0;
+        currentPlayer.dead = !!data.dead;
+        currentPlayer.health = typeof data.health === "number" ? Math.max(0, Math.min(MAX_HEALTH, data.health)) : currentPlayer.health;
+        broadcastPlayersState();
+      } else if (data.type === "inventory_sync") {
+        handleInventorySync(currentPlayer, data);
+      } else if (data.type === "mine") {
+        handleMine(currentPlayer, data);
+      } else if (data.type === "place") {
+        handlePlace(currentPlayer, data);
+      } else if (data.type === "craft") {
+        handleCraft(currentPlayer, data);
+      } else if (data.type === "death") {
+        handleDeath(currentPlayer, data);
+      } else if (data.type === "respawn") {
+        handleRespawn(currentPlayer);
+      } else if (data.type === "attack") {
+        handleAttack(currentPlayer, data);
+      }
     } catch (error) {
-      return;
+      console.error("Message handler error:", error);
     }
+  });
 
-    const currentPlayer = players.get(playerId);
-    if (!currentPlayer) return;
-
-    if (data.type === "join") {
-      currentPlayer.nickname = data.nickname || "Player";
-      broadcastPlayersState();
-    } else if (data.type === "update") {
-      currentPlayer.x = typeof data.x === "number" ? data.x : currentPlayer.x;
-      currentPlayer.y = typeof data.y === "number" ? data.y : currentPlayer.y;
-      currentPlayer.vx = typeof data.vx === "number" ? data.vx : 0;
-      currentPlayer.vy = typeof data.vy === "number" ? data.vy : 0;
-      currentPlayer.direction = data.direction === -1 ? -1 : 1;
-      currentPlayer.state = typeof data.state === "string" ? data.state : "idle";
-      currentPlayer.walkFrameIndex = data.walkFrameIndex | 0;
-      currentPlayer.mineFrameIndex = data.mineFrameIndex | 0;
-      currentPlayer.dead = !!data.dead;
-      currentPlayer.health = typeof data.health === "number" ? Math.max(0, Math.min(MAX_HEALTH, data.health)) : currentPlayer.health;
-      broadcastPlayersState();
-    } else if (data.type === "inventory_sync") {
-      handleInventorySync(currentPlayer, data);
-    } else if (data.type === "mine") {
-      handleMine(currentPlayer, data);
-    } else if (data.type === "place") {
-      handlePlace(currentPlayer, data);
-    } else if (data.type === "craft") {
-      handleCraft(currentPlayer, data);
-    } else if (data.type === "death") {
-      handleDeath(currentPlayer, data);
-    } else if (data.type === "respawn") {
-      handleRespawn(currentPlayer);
-    } else if (data.type === "attack") {
-      handleAttack(currentPlayer, data);
-    }
+  ws.on("error", (error) => {
+    console.error("Socket error:", error);
   });
 
   ws.on("close", () => {
@@ -1065,8 +1088,12 @@ wss.on("connection", (ws) => {
 });
 
 setInterval(() => {
-  updateGrassRegrowth();
-  updateDrops();
+  try {
+    updateGrassRegrowth();
+    updateDrops();
+  } catch (error) {
+    console.error("Server tick error:", error);
+  }
 }, 50);
 
 server.listen(PORT, () => {
