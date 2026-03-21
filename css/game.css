@@ -1,0 +1,57 @@
+#gameScreen {
+  background: #6db8ff;
+}
+
+#gameCanvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  image-rendering: pixelated;
+}
+
+.game-hint {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 20px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.death-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.death-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(115, 0, 0, 0.22);
+}
+
+.death-overlay-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  pointer-events: auto;
+}
+
+.death-overlay-title {
+  color: #fff1f1;
+  font-size: clamp(46px, 5vw, 78px);
+  text-shadow: 4px 4px 0 rgba(55, 0, 0, 0.95);
+}
+
+.death-overlay-button {
+  width: min(260px, 34vw);
+  font-size: 30px;
+}
