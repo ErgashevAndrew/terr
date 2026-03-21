@@ -887,13 +887,29 @@ function handleAttack(player, data) {
   const distance = Math.hypot(targetCenterX - attackerCenterX, targetCenterY - attackerCenterY);
   if (distance > World.blockSize * 2.2) return;
 
+  const direction = targetCenterX >= attackerCenterX ? 1 : -1;
+  const knockbackX = direction * World.blockSize * 0.42;
+  const knockbackY = -World.blockSize * 0.12;
+
   target.health = Math.max(0, target.health - 1);
   if (target.health <= 0) {
     handleDeath(target, { x: target.x, y: target.y });
     return;
   }
 
-  send(target.ws, { type: "selfState", player: serializeSelfPlayer(target) });
+  target.x += direction * World.blockSize * 0.55;
+  target.vx = knockbackX;
+  target.vy = knockbackY;
+
+  send(target.ws, {
+    type: "selfState",
+    player: {
+      ...serializeSelfPlayer(target),
+      knockbackX,
+      knockbackY,
+      knockbackTimer: 10,
+    },
+  });
   broadcastPlayersState();
 }
 

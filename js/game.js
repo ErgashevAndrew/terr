@@ -639,6 +639,9 @@ function canPlayerReachTile(tileX, tileY) {
 
 function breakMineTarget(target) {
   if (AppState.game.mode === 'online') {
+    if (typeof applyPredictedMine === 'function') {
+      applyPredictedMine(target);
+    }
     return typeof sendMineRequest === 'function' ? sendMineRequest(target.tileX, target.tileY) : false;
   }
 

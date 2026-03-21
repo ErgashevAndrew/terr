@@ -16,6 +16,9 @@ window.Player = {
   walkFrameDelay: 8,
   sprintDustTimer: 0,
   placeSwingTimer: 0,
+  networkKnockbackX: 0,
+  networkKnockbackY: 0,
+  networkKnockbackTimer: 0,
   sprite: {
     width: 32,
     height: 48,
@@ -42,6 +45,9 @@ function spawnPlayer() {
   Player.walkFrameTimer = 0;
   Player.sprintDustTimer = 0;
   Player.placeSwingTimer = 0;
+  Player.networkKnockbackX = 0;
+  Player.networkKnockbackY = 0;
+  Player.networkKnockbackTimer = 0;
   resetSprintState();
 }
 
@@ -80,6 +86,9 @@ function loadPlayerSnapshot(snapshot) {
   Player.walkFrameTimer = 0;
   Player.sprintDustTimer = 0;
   Player.placeSwingTimer = 0;
+  Player.networkKnockbackX = 0;
+  Player.networkKnockbackY = 0;
+  Player.networkKnockbackTimer = 0;
   const snapshotHealth = typeof snapshot.health === 'number'
     ? Math.max(0, Math.min(AppState.combat.maxHealth, snapshot.health))
     : AppState.combat.maxHealth;
@@ -286,6 +295,9 @@ function respawnPlayer() {
   Player.walkFrameTimer = 0;
   Player.sprintDustTimer = 0;
   Player.placeSwingTimer = 0;
+  Player.networkKnockbackX = 0;
+  Player.networkKnockbackY = 0;
+  Player.networkKnockbackTimer = 0;
   AppState.combat.health = AppState.combat.maxHealth;
   AppState.combat.dead = false;
   AppState.combat.hurtFlashTimer = 0;
@@ -342,6 +354,14 @@ function updatePlayer() {
   if (!leftPressed && !rightPressed) {
     AppState.input.sprint.active = false;
     AppState.input.sprint.direction = 0;
+  }
+
+  if (Player.networkKnockbackTimer > 0) {
+    Player.vx += Player.networkKnockbackX;
+    Player.vy += Player.networkKnockbackY;
+    Player.networkKnockbackX *= 0.8;
+    Player.networkKnockbackY *= 0.88;
+    Player.networkKnockbackTimer--;
   }
 
   if (jumpPressed && Player.onGround) {

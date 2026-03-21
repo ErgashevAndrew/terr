@@ -231,6 +231,16 @@ function applySelfSnapshot(snapshot) {
     spawnPlayerGibs();
   }
 
+  if (snapshot.dead !== true) {
+    AppState.entities.gibs = [];
+  }
+
+  if (typeof snapshot.knockbackX === 'number' || typeof snapshot.knockbackY === 'number') {
+    Player.networkKnockbackX = snapshot.knockbackX || 0;
+    Player.networkKnockbackY = snapshot.knockbackY || 0;
+    Player.networkKnockbackTimer = snapshot.knockbackTimer || 10;
+  }
+
   setDeathOverlayVisible(snapshot.dead === true);
 }
 
@@ -245,6 +255,25 @@ function syncInventoryWithServer() {
 function sendMineRequest(tileX, tileY) {
   if (!Network.connected) return false;
   sendToServer({ type: 'mine', tileX, tileY });
+  return true;
+}
+
+function applyPredictedMine(target) {
+  if (!target) return false;
+
+  if (target.type === 'tile') {
+    const removedTile = removeTerrainTile(target.tileX, target.tileY);
+    if (!removedTile) return false;
+    spawnBreakParticles(removedTile, target.tileX, target.tileY, 8);
+    return true;
+  }
+
+  const removedSegments = removeTreeSegments(target.treeId, target.segmentIndex);
+  if (!removedSegments.length) return false;
+
+  for (const removed of removedSegments) {
+    spawnBreakParticles(removed.tile, removed.tileX, removed.tileY, 6);
+  }
   return true;
 }
 
