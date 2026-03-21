@@ -873,6 +873,30 @@ function handleRespawn(player) {
   broadcastPlayersState();
 }
 
+function handleAttack(player, data) {
+  const targetId = Number(data.targetId);
+  if (!Number.isFinite(targetId) || targetId === player.id) return;
+
+  const target = players.get(targetId);
+  if (!target || target.dead) return;
+
+  const attackerCenterX = player.x + PLAYER_WIDTH / 2;
+  const attackerCenterY = player.y + PLAYER_HEIGHT / 2;
+  const targetCenterX = target.x + PLAYER_WIDTH / 2;
+  const targetCenterY = target.y + PLAYER_HEIGHT / 2;
+  const distance = Math.hypot(targetCenterX - attackerCenterX, targetCenterY - attackerCenterY);
+  if (distance > World.blockSize * 2.2) return;
+
+  target.health = Math.max(0, target.health - 1);
+  if (target.health <= 0) {
+    handleDeath(target, { x: target.x, y: target.y });
+    return;
+  }
+
+  send(target.ws, { type: "selfState", player: serializeSelfPlayer(target) });
+  broadcastPlayersState();
+}
+
 function updateGrassRegrowth() {
   const changes = createChangeSet();
   const nextEntries = [];
@@ -1013,6 +1037,8 @@ wss.on("connection", (ws) => {
       handleDeath(currentPlayer, data);
     } else if (data.type === "respawn") {
       handleRespawn(currentPlayer);
+    } else if (data.type === "attack") {
+      handleAttack(currentPlayer, data);
     }
   });
 

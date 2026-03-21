@@ -215,9 +215,23 @@ function applyInventorySnapshot(slots) {
 
 function applySelfSnapshot(snapshot) {
   if (!snapshot) return;
+  const wasDead = AppState.combat.dead;
+  const previousHealth = AppState.combat.health;
   Network.selfSnapshot = snapshot;
   loadPlayerSnapshot(snapshot);
-  setDeathOverlayVisible(snapshot.dead !== true);
+
+  if (typeof snapshot.health === 'number' && snapshot.health < previousHealth) {
+    AppState.combat.hurtFlashTimer = AppState.combat.hurtFlashDuration;
+    if (typeof spawnDamageParticles === 'function') {
+      spawnDamageParticles(Player.x + Player.width / 2, Player.y + Player.height / 2);
+    }
+  }
+
+  if (snapshot.dead === true && !wasDead && typeof spawnPlayerGibs === 'function') {
+    spawnPlayerGibs();
+  }
+
+  setDeathOverlayVisible(snapshot.dead === true);
 }
 
 function syncInventoryWithServer() {
@@ -258,6 +272,12 @@ function sendDeathEvent() {
 function requestNetworkRespawn() {
   if (!Network.connected) return;
   sendToServer({ type: 'respawn' });
+}
+
+function sendAttackRequest(targetId) {
+  if (!Network.connected) return false;
+  sendToServer({ type: 'attack', targetId });
+  return true;
 }
 
 function updateNetwork() {

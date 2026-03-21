@@ -241,7 +241,9 @@ function handleGameLeftClick() {
   if (!AppState.game.running || AppState.combat.dead) return false;
 
   const clickTarget = getInventoryClickTarget();
-  if (!clickTarget) return false;
+  if (!clickTarget) {
+    return tryAttackRemotePlayerAtCursor();
+  }
 
   if (clickTarget.type === 'toggle') {
     toggleInventory();
@@ -266,6 +268,35 @@ function handleGameLeftClick() {
   if (clickTarget.type === 'drop-item') {
     dropDraggedItemFromInventory();
     return true;
+  }
+
+  return false;
+}
+
+function tryAttackRemotePlayerAtCursor() {
+  if (AppState.game.mode !== 'online' || AppState.inventory.open || typeof sendAttackRequest !== 'function') return false;
+
+  const mouseWorld = screenToWorld(AppState.mouse.x, AppState.mouse.y);
+  const playerCenterX = Player.x + Player.width / 2;
+  const playerCenterY = Player.y + Player.height / 2;
+
+  for (const remotePlayer of Object.values(Network.players)) {
+    if (remotePlayer.dead) continue;
+    const width = remotePlayer.width || Player.width;
+    const height = remotePlayer.height || Player.height;
+
+    if (!rectanglesOverlap(mouseWorld.x, mouseWorld.y, 1, 1, remotePlayer.x, remotePlayer.y, width, height)) {
+      continue;
+    }
+
+    const targetCenterX = remotePlayer.x + width / 2;
+    const targetCenterY = remotePlayer.y + height / 2;
+    if (Math.hypot(targetCenterX - playerCenterX, targetCenterY - playerCenterY) > World.blockSize * 2.2) {
+      continue;
+    }
+
+    Player.placeSwingTimer = 10;
+    return sendAttackRequest(remotePlayer.id);
   }
 
   return false;
