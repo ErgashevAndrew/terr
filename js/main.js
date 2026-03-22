@@ -1,5 +1,23 @@
 function setupInput() {
   window.addEventListener('keydown', (event) => {
+    if (AppState.game.running && AppState.chat.open) {
+      if (event.code === 'Escape') {
+        if (typeof closeChat === 'function') {
+          closeChat();
+        }
+        event.preventDefault();
+      }
+      return;
+    }
+
+    if (event.code === 'KeyT' && AppState.game.running) {
+      if (typeof openChat === 'function') {
+        openChat();
+      }
+      event.preventDefault();
+      return;
+    }
+
     if (event.code === 'KeyA' || event.code === 'ArrowLeft') {
       if (!event.repeat && typeof registerMovementTap === 'function') registerMovementTap(-1);
       AppState.input.left = true;
@@ -49,6 +67,10 @@ function setupInput() {
   });
 
   window.addEventListener('wheel', (event) => {
+    if (AppState.game.running && AppState.chat.open) {
+      return;
+    }
+
     if (AppState.game.running && AppState.inventory.open && typeof isMouseOverCraftPanel === 'function' && isMouseOverCraftPanel()) {
       event.preventDefault();
       if (typeof scrollCraftRecipes === 'function') {

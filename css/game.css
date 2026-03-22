@@ -55,3 +55,66 @@
   width: min(260px, 34vw);
   font-size: 30px;
 }
+
+.chat-hud {
+  position: fixed;
+  left: 22px;
+  bottom: 24px;
+  z-index: 20;
+  width: min(640px, 56vw);
+  pointer-events: none;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.chat-line {
+  font-size: 26px;
+  line-height: 1.15;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.82);
+  word-break: break-word;
+  transition: opacity 180ms linear;
+}
+
+.chat-line.server {
+  color: #ffe05f;
+}
+
+.chat-line.hidden {
+  display: none;
+}
+
+.chat-nickname {
+  color: #ffe05f;
+}
+
+.chat-text {
+  color: #ffffff;
+}
+
+.chat-input-bar {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.74);
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  pointer-events: auto;
+}
+
+.chat-input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  font-size: 28px;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.82);
+}
+
+.chat-input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}

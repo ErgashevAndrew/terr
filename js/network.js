@@ -3,6 +3,7 @@ window.Network = {
   connected: false,
   connecting: false,
   playerId: null,
+  clientId: '',
   players: {},
   serverAddress: '',
   sendTimer: 0,
@@ -10,6 +11,32 @@ window.Network = {
   pendingSpawn: null,
   selfSnapshot: null,
 };
+
+function getPersistentClientId() {
+  if (Network.clientId) return Network.clientId;
+
+  const storageKey = 'terr-client-id';
+  let clientId = '';
+
+  try {
+    clientId = localStorage.getItem(storageKey) || '';
+  } catch (error) {}
+
+  if (!clientId) {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      clientId = window.crypto.randomUUID();
+    } else {
+      clientId = `terr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    try {
+      localStorage.setItem(storageKey, clientId);
+    } catch (error) {}
+  }
+
+  Network.clientId = clientId;
+  return clientId;
+}
 
 function normalizeServerAddress(address) {
   let value = (address || '').trim();
@@ -63,7 +90,7 @@ function connectToServer(address, nickname) {
     Network.connected = true;
     Network.connecting = false;
     Network.sendTimer = 0;
-    sendToServer({ type: 'join', nickname });
+    sendToServer({ type: 'join', nickname, clientId: getPersistentClientId() });
   });
 
   socket.addEventListener('message', (event) => {
@@ -114,6 +141,11 @@ function connectToServer(address, nickname) {
 
     if (data.type === 'selfState') {
       applySelfSnapshot(data.player);
+      return;
+    }
+
+    if (data.type === 'chat' && typeof addChatMessage === 'function') {
+      addChatMessage(data);
     }
   });
 
@@ -168,8 +200,10 @@ function applyNetworkWorld(serverWorld) {
 
 function applyPlayersSnapshot(playersArray) {
   const nextPlayers = {};
+  const selfClientId = getPersistentClientId();
   for (const player of playersArray) {
     if (player.id === Network.playerId) continue;
+    if (player.clientId && player.clientId === selfClientId) continue;
     nextPlayers[player.id] = player;
   }
   Network.players = nextPlayers;
@@ -326,9 +360,20 @@ function updateNetwork() {
     state: Player.state,
     walkFrameIndex: Player.walkFrameIndex || 0,
     mineFrameIndex: Player.mineFrameIndex || 0,
+    miningActive: !!(AppState.mining.targetKey && AppState.mouse.leftDown && !AppState.inventory.open && !AppState.combat.dead),
+    miningTargetX: AppState.mining.targetX,
+    miningTargetY: AppState.mining.targetY,
+    miningTargetType: AppState.mining.targetType,
+    miningFrame: AppState.mining.frame || 0,
     health: AppState.combat.health,
     dead: AppState.combat.dead,
   });
+}
+
+function sendChatMessage(text) {
+  if (!Network.connected) return false;
+  sendToServer({ type: 'chat', text });
+  return true;
 }
 
 function getRemotePlayerSprite(remotePlayer) {

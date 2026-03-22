@@ -100,6 +100,13 @@
     <section id="gameScreen" class="screen hidden">
       <canvas id="gameCanvas" width="1280" height="720"></canvas>
 
+      <div id="chatHud" class="chat-hud hidden">
+        <div id="chatMessages" class="chat-messages"></div>
+        <div id="chatInputBar" class="chat-input-bar hidden">
+          <input id="chatInput" class="chat-input" type="text" maxlength="140" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+
       <div id="debugPanel" class="debug-panel hidden">
         <div class="debug-title">Debug</div>
         <label class="debug-option">

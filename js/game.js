@@ -3,6 +3,10 @@ window.Game = {
   ctx: null,
   lightCanvas: null,
   lightCtx: null,
+  chatHud: null,
+  chatMessages: null,
+  chatInputBar: null,
+  chatInput: null,
   lightCache: {
     key: '',
     drawX: 0,
@@ -39,6 +43,10 @@ function setupGame() {
   Game.ctx.imageSmoothingEnabled = false;
   Game.lightCanvas = document.createElement('canvas');
   Game.lightCtx = Game.lightCanvas.getContext('2d');
+  Game.chatHud = document.getElementById('chatHud');
+  Game.chatMessages = document.getElementById('chatMessages');
+  Game.chatInputBar = document.getElementById('chatInputBar');
+  Game.chatInput = document.getElementById('chatInput');
   const respawnBtn = document.getElementById('respawnBtn');
 
   resizeCanvas();
@@ -74,6 +82,25 @@ function setupGame() {
     event.preventDefault();
   });
 
+  if (Game.chatInput) {
+    Game.chatInput.addEventListener('input', () => {
+      AppState.chat.input = Game.chatInput.value;
+    });
+
+    Game.chatInput.addEventListener('keydown', (event) => {
+      if (event.code === 'Enter') {
+        event.preventDefault();
+        submitChatMessage();
+        return;
+      }
+
+      if (event.code === 'Escape') {
+        event.preventDefault();
+        closeChat();
+      }
+    });
+  }
+
   if (respawnBtn) {
     respawnBtn.addEventListener('click', () => {
       if (typeof respawnPlayer === 'function') {
@@ -103,6 +130,8 @@ function startSingleGame(worldRecord = null) {
   if (typeof resetAllInputs === 'function') resetAllInputs();
   AppState.game.mode = 'single';
   disconnectFromServer(false);
+  clearChatMessages();
+  closeChat(true);
 
   if (worldRecord && loadWorldSnapshot(worldRecord.world)) {
     loadPlayerSnapshot(worldRecord.player);
@@ -131,11 +160,13 @@ function startOnlineGame() {
   AppState.game.mode = 'online';
   AppState.game.currentWorldId = null;
   AppState.game.currentWorldName = '';
+  clearChatMessages();
   AppState.inventory.open = false;
   AppState.inventory.draggedItem = null;
   AppState.inventory.draggedSlot = -1;
   AppState.entities.particles = [];
   AppState.entities.gibs = [];
+  closeChat(true);
   resetMiningState();
   if (Network.selfSnapshot) {
     loadPlayerSnapshot(Network.selfSnapshot);
@@ -167,6 +198,7 @@ function stopGameToMenu(shouldDisconnect = true) {
   AppState.inventory.open = false;
   AppState.inventory.hoveredSlot = -1;
   restoreDraggedItem();
+  closeChat(true);
   resetMiningState();
   setDeathOverlayVisible(false);
   AppState.screens.gameScreen.classList.add('hidden');
@@ -205,6 +237,7 @@ function updateGame() {
 
   updateCamera(Game.canvas);
   updateNetwork();
+  updateChatUi();
 }
 
 function drawSky(ctx) {
@@ -226,6 +259,7 @@ function drawGame() {
   drawWorld(ctx);
   drawDrops(ctx);
   drawGibs(ctx);
+  drawRemoteMiningOverlays(ctx);
   drawMiningOverlay(ctx);
   drawRemotePlayers(ctx);
   drawPlayer(ctx);
@@ -238,7 +272,7 @@ function drawGame() {
 }
 
 function handleGameLeftClick() {
-  if (!AppState.game.running || AppState.combat.dead) return false;
+  if (!AppState.game.running || AppState.combat.dead || AppState.chat.open) return false;
 
   const clickTarget = getInventoryClickTarget();
   if (!clickTarget) {
@@ -303,7 +337,7 @@ function tryAttackRemotePlayerAtCursor() {
 }
 
 function toggleInventory(forceState) {
-  if (AppState.combat.dead) return;
+  if (AppState.combat.dead || AppState.chat.open) return;
   const shouldOpen = typeof forceState === 'boolean' ? forceState : !AppState.inventory.open;
 
   if (!shouldOpen) {
@@ -687,6 +721,124 @@ function setDeathOverlayVisible(visible) {
   const overlay = document.getElementById('deathOverlay');
   if (!overlay) return;
   overlay.classList.toggle('hidden', !visible);
+}
+
+function openChat() {
+  if (!AppState.game.running || AppState.combat.dead) return;
+  AppState.chat.open = true;
+  if (typeof resetAllInputs === 'function') {
+    resetAllInputs();
+  }
+  updateChatUi();
+  if (Game.chatInput) {
+    Game.chatInput.value = AppState.chat.input || '';
+    Game.chatInput.focus();
+    Game.chatInput.setSelectionRange(Game.chatInput.value.length, Game.chatInput.value.length);
+  }
+}
+
+function closeChat(clearInput = false) {
+  AppState.chat.open = false;
+  if (clearInput) {
+    AppState.chat.input = '';
+  }
+  if (Game.chatInput) {
+    Game.chatInput.value = clearInput ? '' : (AppState.chat.input || '');
+    Game.chatInput.blur();
+  }
+  updateChatUi();
+}
+
+function clearChatMessages() {
+  AppState.chat.messages = [];
+  updateChatUi();
+}
+
+function addChatMessage(payload) {
+  const message = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: payload.messageType === 'server' ? 'server' : 'player',
+    nickname: payload.nickname || '',
+    text: typeof payload.text === 'string' ? payload.text : '',
+    createdAt: performance.now(),
+  };
+
+  AppState.chat.messages.push(message);
+  while (AppState.chat.messages.length > AppState.chat.maxMessages) {
+    AppState.chat.messages.shift();
+  }
+
+  updateChatUi();
+}
+
+function submitChatMessage() {
+  const text = (AppState.chat.input || '').trim();
+  if (!text) {
+    closeChat(true);
+    return;
+  }
+
+  if (AppState.game.mode === 'online' && typeof sendChatMessage === 'function') {
+    sendChatMessage(text);
+  } else if (AppState.game.mode === 'single') {
+    addChatMessage({
+      messageType: 'player',
+      nickname: 'Local',
+      text,
+    });
+  }
+
+  AppState.chat.input = '';
+  closeChat(true);
+}
+
+function updateChatUi() {
+  if (!Game.chatHud || !Game.chatMessages || !Game.chatInputBar || !Game.chatInput) return;
+
+  const visible = AppState.game.running;
+  Game.chatHud.classList.toggle('hidden', !visible);
+  Game.chatInputBar.classList.toggle('hidden', !AppState.chat.open);
+  if (!visible) return;
+
+  const now = performance.now();
+  const fragment = document.createDocumentFragment();
+
+  for (const message of AppState.chat.messages) {
+    const age = now - message.createdAt;
+    const shouldShow = AppState.chat.open || age < AppState.chat.fadeDelay + AppState.chat.fadeDuration;
+    if (!shouldShow) continue;
+
+    const line = document.createElement('div');
+    line.className = `chat-line${message.type === 'server' ? ' server' : ''}`;
+
+    let opacity = 1;
+    if (!AppState.chat.open && age > AppState.chat.fadeDelay) {
+      const fadeProgress = (age - AppState.chat.fadeDelay) / AppState.chat.fadeDuration;
+      opacity = Math.max(0, 1 - fadeProgress);
+    }
+    line.style.opacity = opacity.toFixed(3);
+
+    if (message.type === 'server') {
+      line.textContent = message.text;
+    } else {
+      const nick = document.createElement('span');
+      nick.className = 'chat-nickname';
+      nick.textContent = `${message.nickname}: `;
+      const text = document.createElement('span');
+      text.className = 'chat-text';
+      text.textContent = message.text;
+      line.appendChild(nick);
+      line.appendChild(text);
+    }
+
+    fragment.appendChild(line);
+  }
+
+  Game.chatMessages.replaceChildren(fragment);
+
+  if (AppState.chat.open) {
+    Game.chatInput.value = AppState.chat.input || '';
+  }
 }
 
 function updateDrops() {
@@ -1183,14 +1335,30 @@ function drawGibs(ctx) {
 
 function drawMiningOverlay(ctx) {
   if (!AppState.mining.targetKey) return;
-  if (AppState.mining.targetType === 'torchup' || AppState.mining.targetType === 'torchleft' || AppState.mining.targetType === 'torchright') return;
+  drawMiningFrame(ctx, AppState.mining.targetType, AppState.mining.targetX, AppState.mining.targetY, AppState.mining.frame);
+}
 
-  const frame = Assets.blocks.breakFrames[AppState.mining.frame];
+function drawRemoteMiningOverlays(ctx) {
+  if (AppState.game.mode !== 'online') return;
+
+  for (const remotePlayer of Object.values(Network.players)) {
+    if (!remotePlayer || remotePlayer.dead || !remotePlayer.miningActive) continue;
+    drawMiningFrame(
+      ctx,
+      remotePlayer.miningTargetType,
+      remotePlayer.miningTargetX,
+      remotePlayer.miningTargetY,
+      remotePlayer.miningFrame || 0
+    );
+  }
+}
+
+function drawMiningFrame(ctx, tile, tileX, tileY, frameIndex) {
+  if (!tile && tile !== 0) return;
+  if (tile === 'torchup' || tile === 'torchleft' || tile === 'torchright') return;
+
+  const frame = Assets.blocks.breakFrames[frameIndex];
   if (!isDrawableSprite(frame)) return;
-
-  const tile = AppState.mining.targetType;
-  const tileX = AppState.mining.targetX;
-  const tileY = AppState.mining.targetY;
 
   let drawX = tileX * World.blockSize;
   let drawY = tileY * World.blockSize;
@@ -1519,7 +1687,7 @@ function pointInRect(x, y, rect) {
 }
 
 function tryPlaceBlockAtCursor() {
-  if (!AppState.game.running || AppState.inventory.open || AppState.combat.dead) return false;
+  if (!AppState.game.running || AppState.inventory.open || AppState.combat.dead || AppState.chat.open) return false;
 
   const slotIndex = AppState.inventory.selectedHotbarSlot;
   if (slotIndex === -1) return false;

@@ -80,6 +80,14 @@ window.AppState = {
     panelOpen: false,
     showHitbox: false,
   },
+  chat: {
+    open: false,
+    input: '',
+    messages: [],
+    maxMessages: 24,
+    fadeDelay: 7000,
+    fadeDuration: 2000,
+  },
   input: {
     left: false,
     right: false,

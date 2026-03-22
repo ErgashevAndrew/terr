@@ -64,6 +64,15 @@ function broadcast(payload) {
   }
 }
 
+function broadcastChatMessage(messageType, text, nickname = "") {
+  broadcast({
+    type: "chat",
+    messageType,
+    nickname,
+    text,
+  });
+}
+
 function createEmptyInventory() {
   return Array.from({ length: INVENTORY_SLOTS }, () => null);
 }
@@ -559,7 +568,9 @@ function createPlayer(id) {
   const spawn = getSpawnPosition();
   return {
     id,
+    clientId: "",
     nickname: "Player",
+    joined: false,
     x: spawn.x,
     y: spawn.y,
     vx: 0,
@@ -568,6 +579,11 @@ function createPlayer(id) {
     state: "idle",
     walkFrameIndex: 0,
     mineFrameIndex: 0,
+    miningActive: false,
+    miningTargetX: 0,
+    miningTargetY: 0,
+    miningTargetType: "",
+    miningFrame: 0,
     health: MAX_HEALTH,
     dead: false,
     spawnX: spawn.x,
@@ -579,6 +595,7 @@ function createPlayer(id) {
 function serializePublicPlayer(player) {
   return {
     id: player.id,
+    clientId: player.clientId,
     nickname: player.nickname,
     x: player.x,
     y: player.y,
@@ -591,6 +608,11 @@ function serializePublicPlayer(player) {
     state: player.state,
     walkFrameIndex: player.walkFrameIndex,
     mineFrameIndex: player.mineFrameIndex,
+    miningActive: !!player.miningActive,
+    miningTargetX: player.miningTargetX,
+    miningTargetY: player.miningTargetY,
+    miningTargetType: player.miningTargetType,
+    miningFrame: player.miningFrame || 0,
     dead: player.dead,
     health: player.health,
   };
@@ -613,6 +635,38 @@ function serializeSelfPlayer(player) {
 
 function getPlayersArray() {
   return Array.from(players.values(), serializePublicPlayer);
+}
+
+function findPlayerByClientId(clientId, exceptPlayerId = null) {
+  if (!clientId) return null;
+
+  for (const player of players.values()) {
+    if (player.id === exceptPlayerId) continue;
+    if (player.clientId && player.clientId === clientId) {
+      return player;
+    }
+  }
+
+  return null;
+}
+
+function removePlayer(playerId, options = {}) {
+  const player = players.get(playerId);
+  if (!player) return;
+
+  players.delete(playerId);
+
+  if (options.closeSocket && player.ws && player.ws.readyState === WebSocket.OPEN) {
+    try {
+      player.ws.close();
+    } catch (error) {}
+  }
+
+  if (options.announce !== false && player.joined) {
+    broadcastChatMessage("server", `Игрок ${player.nickname} вышел из игры`);
+  }
+
+  broadcastPlayersState();
 }
 
 function generateWorld() {
@@ -894,6 +948,7 @@ function handleAttack(player, data) {
 
   const target = players.get(targetId);
   if (!target || target.dead) return;
+  if (player.clientId && target.clientId && player.clientId === target.clientId) return;
 
   const attackerCenterX = player.x + PLAYER_WIDTH / 2;
   const attackerCenterY = player.y + PLAYER_HEIGHT / 2;
@@ -1043,7 +1098,15 @@ wss.on("connection", (ws) => {
       if (!currentPlayer) return;
 
       if (data.type === "join") {
+        currentPlayer.clientId = typeof data.clientId === "string" ? data.clientId.slice(0, 80) : "";
+        const duplicatePlayer = findPlayerByClientId(currentPlayer.clientId, currentPlayer.id);
+        if (duplicatePlayer) {
+          removePlayer(duplicatePlayer.id, { closeSocket: true, announce: false });
+        }
+
         currentPlayer.nickname = data.nickname || "Player";
+        currentPlayer.joined = true;
+        broadcastChatMessage("server", `Игрок ${currentPlayer.nickname} присоединился к игре`);
         broadcastPlayersState();
       } else if (data.type === "update") {
         currentPlayer.x = typeof data.x === "number" ? data.x : currentPlayer.x;
@@ -1054,6 +1117,11 @@ wss.on("connection", (ws) => {
         currentPlayer.state = typeof data.state === "string" ? data.state : "idle";
         currentPlayer.walkFrameIndex = data.walkFrameIndex | 0;
         currentPlayer.mineFrameIndex = data.mineFrameIndex | 0;
+        currentPlayer.miningActive = !!data.miningActive;
+        currentPlayer.miningTargetX = typeof data.miningTargetX === "number" ? data.miningTargetX : currentPlayer.miningTargetX;
+        currentPlayer.miningTargetY = typeof data.miningTargetY === "number" ? data.miningTargetY : currentPlayer.miningTargetY;
+        currentPlayer.miningTargetType = typeof data.miningTargetType === "string" ? data.miningTargetType : "";
+        currentPlayer.miningFrame = data.miningFrame | 0;
         currentPlayer.dead = !!data.dead;
         currentPlayer.health = typeof data.health === "number" ? Math.max(0, Math.min(MAX_HEALTH, data.health)) : currentPlayer.health;
         broadcastPlayersState();
@@ -1071,6 +1139,10 @@ wss.on("connection", (ws) => {
         handleRespawn(currentPlayer);
       } else if (data.type === "attack") {
         handleAttack(currentPlayer, data);
+      } else if (data.type === "chat") {
+        const text = typeof data.text === "string" ? data.text.trim().slice(0, 140) : "";
+        if (!text || !currentPlayer.joined) return;
+        broadcastChatMessage("player", text, currentPlayer.nickname || "Player");
       }
     } catch (error) {
       console.error("Message handler error:", error);
@@ -1082,8 +1154,7 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    players.delete(playerId);
-    broadcastPlayersState();
+    removePlayer(playerId);
   });
 });
 
